@@ -806,6 +806,7 @@ func (s *Server) PullHandler(c *gin.Context) {
 
 		regOpts := &registryOptions{
 			Insecure: req.Insecure,
+			Token:    envconfig.MinibaseAPIKey(),
 		}
 
 		ctx, cancel := context.WithCancel(c.Request.Context())
@@ -855,6 +856,7 @@ func (s *Server) PushHandler(c *gin.Context) {
 
 		regOpts := &registryOptions{
 			Insecure: req.Insecure,
+			Token:    envconfig.MinibaseAPIKey(),
 		}
 
 		ctx, cancel := context.WithCancel(c.Request.Context())

@@ -38,9 +38,15 @@ var (
 )
 
 func ParseModelPath(name string) ModelPath {
+	// Check for Minibase registry override
+	registry := DefaultRegistry
+	if minibaseRegistry := envconfig.MinibaseRegistryURL(); minibaseRegistry != "" {
+		registry = minibaseRegistry
+	}
+	
 	mp := ModelPath{
 		ProtocolScheme: DefaultProtocolScheme,
-		Registry:       DefaultRegistry,
+		Registry:       registry,
 		Namespace:      DefaultNamespace,
 		Repository:     "",
 		Tag:            DefaultTag,
