@@ -203,14 +203,48 @@ var (
 	ContextLength = Uint("OLLAMA_CONTEXT_LENGTH", 4096)
 	// Auth enables authentication between the Ollama client and server
 	UseAuth = Bool("OLLAMA_AUTH")
-	
-	// Minibase Configuration
-	// MinibaseRegistryURL sets a custom registry URL for Minibase
-	MinibaseRegistryURL = String("MINIBASE_REGISTRY_URL")
-	// MinibaseAPIKey sets the API key for Minibase registry authentication
-	MinibaseAPIKey = String("MINIBASE_API_KEY")
-	// MinibaseAllowFallback allows fallback to upstream Ollama registry
-	MinibaseAllowFallback = BoolWithDefault("MINIBASE_ALLOW_FALLBACK")
+)
+
+// Minibase Embedded Configuration
+// These can be set at compile time via -ldflags for user distribution
+var (
+	EmbeddedRegistryURL = ""
+	EmbeddedAPIKey      = ""
+)
+
+// MinibaseRegistryURL returns the registry URL
+// Priority: env var > embedded config > default
+func MinibaseRegistryURL() string {
+	// Check environment variable first (for testing/override)
+	if s := Var("MINIBASE_REGISTRY_URL"); s != "" {
+		return s
+	}
+	// Use embedded config (set at build time for users)
+	if EmbeddedRegistryURL != "" {
+		return EmbeddedRegistryURL
+	}
+	// Should not reach here in production
+	return "registry.ollama.ai"
+}
+
+// MinibaseAPIKey returns the API key
+// Priority: env var > embedded config
+func MinibaseAPIKey() string {
+	// Check environment variable first (for testing/override)
+	if s := Var("MINIBASE_API_KEY"); s != "" {
+		return s
+	}
+	// Use embedded config (set at build time for users)
+	if EmbeddedAPIKey != "" {
+		return EmbeddedAPIKey
+	}
+	// No default - will require configuration
+	return ""
+}
+
+var (
+	// Legacy environment variable support (kept for backward compatibility)
+	minibaseAllowFallback = BoolWithDefault("MINIBASE_ALLOW_FALLBACK")
 )
 
 func String(s string) func() string {
@@ -297,11 +331,6 @@ func AsMap() map[string]EnvVar {
 		"OLLAMA_CONTEXT_LENGTH":    {"OLLAMA_CONTEXT_LENGTH", ContextLength(), "Context length to use unless otherwise specified (default: 4096)"},
 		"OLLAMA_NEW_ENGINE":        {"OLLAMA_NEW_ENGINE", NewEngine(), "Enable the new Ollama engine"},
 		"OLLAMA_REMOTES":           {"OLLAMA_REMOTES", Remotes(), "Allowed hosts for remote models (default \"ollama.com\")"},
-
-		// Minibase Configuration
-		"MINIBASE_REGISTRY_URL":    {"MINIBASE_REGISTRY_URL", MinibaseRegistryURL(), "Custom registry URL for Minibase (default: registry.ollama.ai)"},
-		"MINIBASE_API_KEY":         {"MINIBASE_API_KEY", "***", "API key for Minibase registry authentication"},
-		"MINIBASE_ALLOW_FALLBACK":  {"MINIBASE_ALLOW_FALLBACK", MinibaseAllowFallback(true), "Allow fallback to upstream registry for public models (default: true)"},
 
 		// Informational
 		"HTTP_PROXY":  {"HTTP_PROXY", String("HTTP_PROXY")(), "HTTP proxy"},
