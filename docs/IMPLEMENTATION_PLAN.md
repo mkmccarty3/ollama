@@ -268,29 +268,35 @@ https://yourdomain.com/api.php?action=ollama_getManifest&model_id=llama2
 
 **UI Flow**:
 ```
-User on Model Page:
-  ├─ "Download for macOS" → Builds minibase-macos-arm64.zip
-  ├─ "Download for Linux" → Builds minibase-linux-amd64.zip
-  └─ "Download for Windows" → Builds minibase-windows-amd64.zip
+User on Special:ApiKeys page:
+  ├─ Sees button at top: "Download Minibase Ollama"
+  ├─ Clicks button → Modal opens with platform selection
+  ├─ Selects platform (e.g., macOS Apple Silicon)
+  ├─ Clicks "Download" → Button shows loading state
+  └─ Waits 30-60 seconds → Download starts automatically
 
 After download:
-  User extracts and runs: ./minibase pull my-model
+  User extracts and runs: ./minibase list
+  ↓
+  Shows all their models
+  ↓
+  User runs: ./minibase pull my-model-123
   ↓
   Minibase connects to yourdomain.com/api.php
   ↓
   Uses embedded API key for auth
   ↓
-  Downloads only models user owns
+  Downloads GGUF file
 ```
 
-**Decision**: ✅ **Option A - Keep ModelPackaging as-is and ADD Ollama downloads as new option**
+**Decision**: ✅ **Option A - Keep ModelPackaging as-is, add Ollama download on API Keys page**
 
 This means:
-- Existing "Download for macOS", "Download GGUF" buttons remain unchanged
-- Add NEW buttons: "Download Minibase (macOS)", "Download Minibase (Linux)", "Download Minibase (Windows)"
-- Users can choose between:
-  - Traditional: Download GGUF directly or as macOS app bundle
-  - New: Download Ollama binary with model auto-configured
+- ModelPackaging remains unchanged (existing GGUF/macOS app downloads on model pages)
+- NEW: "Download Minibase Ollama" button on Special:ApiKeys page
+- User downloads binary once (tied to their API key)
+- Binary can pull ANY of their models (no need to download per-model)
+- Clear separation: API Keys page = get CLI tool, Model pages = direct downloads
 
 ### Phase 6: Handle Model Import from Marketplace
 
@@ -352,24 +358,46 @@ ollama-minibase/server/routes.go (already correct)
    ```
 2. **Test rewrites** with curl
 
-### Phase 4: Binary Builder
-1. **Create API endpoint**: `ApiGenerateOllamaBinary.php`
-   - Takes parameters: user (from session), platform, arch
-   - Gets user's API key from api_keys table
-   - Clones/pulls ollama-minibase repo (or reads from pre-configured path)
-   - Builds with embedded config
+### Phase 4: Binary Builder API
+1. **Create API endpoint**: `ApiGenerateOllamaBinary.php` in ApiKeyAuth extension
+   - Module name: `apikey_generateOllamaBinary`
+   - Parameters: platform, arch
+   - Gets authenticated user from session
+   - Retrieves user's API key from api_keys table (most recently created, non-revoked)
+   - Validates ollama-minibase source path exists on server
+   - Builds with embedded config:
+     ```php
+     $ldflags = "-X github.com/ollama/ollama/envconfig.EmbeddedRegistryURL={$registryUrl} " .
+                "-X github.com/ollama/ollama/envconfig.EmbeddedAPIKey={$apiKey}";
+     ```
    - Creates zip with binary + README
-   - Streams to user
-2. **Build script helper** (optional): Python/Shell script to handle Go compilation
+   - Streams to user with proper headers
+2. **Server Requirements**:
+   - Go 1.22+ installed on web server
+   - ollama-minibase source cloned at known path (e.g., `/opt/ollama-minibase/`)
+   - Write permissions to temp directory for builds
+3. **Build script helper** (optional): Shell script to handle Go compilation
 
-### Phase 5: Download UI
-1. **Extend SpecialModelDownload.php**:
-   - Add new section: "Download Ollama CLI Runner"
-   - Platform selection buttons (macOS ARM/Intel, Linux ARM/x64, Windows x64)
-   - "Generate" button triggers ApiGenerateOllamaBinary
-   - Progress indicator ("Building your custom binary...")
-2. **OR Create new Special page**: SpecialOllamaDownload.php
-3. **JavaScript**: Handle download trigger, show progress
+### Phase 5: Download UI (API Keys Page)
+1. **Extend SpecialApiKeys.php** (ApiKeyAuth extension):
+   - Add button at top of page: "Download Minibase Ollama"
+   - Style consistent with existing buttons on the page
+   - Opens modal/dropdown with platform selection:
+     - macOS (Apple Silicon / Intel)
+     - Linux (ARM64 / x64)
+     - Windows (x64)
+   - "Download" button triggers ApiGenerateOllamaBinary
+   - Button enters loading state during build (30-60 seconds)
+   - Shows message: "Generating your custom binary... This may take a minute."
+2. **JavaScript** (`ext.ApiKeyAuth.apikeys.js`):
+   - Handle download button click
+   - Show platform selection UI
+   - Trigger API call to generate binary
+   - Display loading state with spinner
+   - Handle download when ready
+3. **CSS** (`ext.ApiKeyAuth.apikeys.css`):
+   - Style download button and modal
+   - Loading state animation
 
 ### Phase 6: Testing
 1. **Unit tests**:
@@ -400,8 +428,9 @@ ollama-minibase/server/routes.go (already correct)
    - Rewrite rules handle URL translation transparently
 
 2. **ModelPackaging Integration**:
-   - ✅ **ANSWERED: Option A - Keep ModelPackaging + add Ollama as new download option**
-   - Will add new download buttons alongside existing ones
+   - ✅ **ANSWERED: Keep ModelPackaging unchanged**
+   - Add Ollama download button on Special:ApiKeys page (not on model pages)
+   - One binary download per user (can pull all their models)
 
 3. **Model Naming in Ollama**:
    - ✅ **ANSWERED: Use `model_id` directly** (e.g., `my-model-123`)
@@ -497,23 +526,28 @@ CREATE INDEX idx_artifact_digest ON training_models(artifact_digest);
 1. ✅ OllamaRegistry MediaWiki extension (PHP)
 2. ✅ Apache rewrite rules for /v2/ paths
 3. ✅ Database migration + backfill script
-4. ✅ Binary builder API endpoint
-5. ✅ Updated download UI with Ollama options
-6. ✅ Testing suite
-7. ✅ Deployment documentation
+4. ✅ Binary builder API endpoint (in ApiKeyAuth extension)
+5. ✅ Updated SpecialApiKeys page with download button
+6. ✅ JavaScript for platform selection and loading state
+7. ✅ Testing suite
+8. ✅ Deployment documentation (including Go installation on server)
 
 ### 🎯 User Experience:
 ```bash
-# User clicks "Download Minibase for macOS ARM"
+# User navigates to Special:ApiKeys
+# Clicks "Download Minibase Ollama" button at top of page
+# Selects "macOS (Apple Silicon)"
+# Clicks "Download" → Button shows loading state
 # Waits 30-60 seconds while binary builds
 # Downloads: minibase-macos-arm64.zip
 
 # Extracts and runs:
 ./minibase list
-# Shows their models only
+# Shows all their models (private, team, imported)
 
 ./minibase pull my-model-123
 # Downloads from yourdomain.com with embedded API key
+# Saves to ~/.minibase/models/
 
 ./minibase run my-model-123 "Hello!"
 # Runs inference locally
@@ -530,8 +564,9 @@ Once approved, I will:
 2. Create database migration SQL
 3. Create backfill script
 4. Create OllamaRegistry extension with all endpoints
-5. Create binary builder API
-6. Add download UI
-7. Test end-to-end
-8. Provide deployment instructions
+5. Create binary builder API in ApiKeyAuth extension
+6. Update SpecialApiKeys page with download button
+7. Add JavaScript for platform selection modal and loading states
+8. Test end-to-end
+9. Provide deployment instructions (including Go setup on server)
 
