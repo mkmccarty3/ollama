@@ -345,8 +345,9 @@ cd /Users/codemonkey/Projects/rostra
 # Pull updated subtree
 git subtree pull --prefix third_party/ollama ollama-fork minibase --squash
 
-# Rebuild binaries
-python scripts/build_minibase_ollama.py
+# Binaries are built on-demand via ApiGenerateOllamaBinary.php
+# when users click "Download Minibase Ollama" in the API Keys page
+# No manual build step required
 
 # Test
 ```
@@ -362,11 +363,10 @@ python scripts/build_minibase_ollama.py
 - `bin/minibase` - Built binary
 
 ### Rostra (`rostra/`)
-- `scripts/build_user_binary.py` - Per-user binary builder
-- `scripts/build_minibase_ollama.py` - Standard build script for Ollama
-- `fastapi_server/model_registry.py` - Production registry
-- `fastapi_server/app.py` - FastAPI main app
-- `dream/local_models/` - Model storage
+- `mediawiki/extensions/OllamaRegistry/includes/ApiGenerateOllamaBinary.php` - On-demand binary builder
+- `mediawiki/extensions/OllamaRegistry/includes/ApiGetBlob.php` - Model download handler
+- `mediawiki/extensions/OllamaRegistry/includes/ApiGetManifest.php` - Manifest provider
+- `mediawiki/extensions/OllamaRegistry/includes/ApiListModels.php` - Model listing
 - `third_party/ollama/` - Vendored fork (after subtree)
 - `builds/` - Generated user binaries
 
