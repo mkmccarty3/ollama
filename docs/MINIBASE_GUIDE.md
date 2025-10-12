@@ -346,7 +346,7 @@ cd /Users/codemonkey/Projects/rostra
 git subtree pull --prefix third_party/ollama ollama-fork minibase --squash
 
 # Rebuild binaries
-python scripts/build_minibase.py
+python scripts/build_minibase_ollama.py
 
 # Test
 ```
@@ -363,7 +363,7 @@ python scripts/build_minibase.py
 
 ### Rostra (`rostra/`)
 - `scripts/build_user_binary.py` - Per-user binary builder
-- `scripts/build_minibase.py` - Standard build script
+- `scripts/build_minibase_ollama.py` - Standard build script for Ollama
 - `fastapi_server/model_registry.py` - Production registry
 - `fastapi_server/app.py` - FastAPI main app
 - `dream/local_models/` - Model storage
