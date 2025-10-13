@@ -211,15 +211,14 @@ jobs:
       - name: Upload to GCS (Staging)
         if: steps.target.outputs.target == 'staging' || steps.target.outputs.target == 'both'
         run: |
-          BUCKET="${{ secrets.GCS_BUCKET_STAGING }}"
           VERSION=$(git describe --tags --always --dirty)
           TIMESTAMP=$(date +%Y%m%d_%H%M%S)
           
           # Upload to latest/
-          gsutil -m cp flat-binaries/* gs://${BUCKET}/latest/
+          gsutil -m cp flat-binaries/* gs://${{ secrets.GCS_BUCKET_STAGING }}/latest/
           
           # Upload to versioned directory
-          gsutil -m cp flat-binaries/* gs://${BUCKET}/versions/${VERSION}_${TIMESTAMP}/
+          gsutil -m cp flat-binaries/* gs://${{ secrets.GCS_BUCKET_STAGING }}/versions/${VERSION}_${TIMESTAMP}/
           
           # Create a manifest file
           cat > manifest.json << EOF
@@ -232,22 +231,21 @@ jobs:
           }
           EOF
           
-          gsutil cp manifest.json gs://${BUCKET}/latest/manifest.json
+          gsutil cp manifest.json gs://${{ secrets.GCS_BUCKET_STAGING }}/latest/manifest.json
           
-          echo "✅ Uploaded to staging: gs://${BUCKET}/latest/"
+          echo "✅ Uploaded to staging: gs://${{ secrets.GCS_BUCKET_STAGING }}/latest/"
       
       - name: Upload to GCS (Production)
         if: steps.target.outputs.target == 'production' || steps.target.outputs.target == 'both'
         run: |
-          BUCKET="${{ secrets.GCS_BUCKET_PROD }}"
           VERSION=$(git describe --tags --always --dirty)
           TIMESTAMP=$(date +%Y%m%d_%H%M%S)
           
           # Upload to latest/
-          gsutil -m cp flat-binaries/* gs://${BUCKET}/latest/
+          gsutil -m cp flat-binaries/* gs://${{ secrets.GCS_BUCKET_PROD }}/latest/
           
           # Upload to versioned directory
-          gsutil -m cp flat-binaries/* gs://${BUCKET}/versions/${VERSION}_${TIMESTAMP}/
+          gsutil -m cp flat-binaries/* gs://${{ secrets.GCS_BUCKET_PROD }}/versions/${VERSION}_${TIMESTAMP}/
           
           # Create a manifest file
           cat > manifest.json << EOF
@@ -260,9 +258,9 @@ jobs:
           }
           EOF
           
-          gsutil cp manifest.json gs://${BUCKET}/latest/manifest.json
+          gsutil cp manifest.json gs://${{ secrets.GCS_BUCKET_PROD }}/latest/manifest.json
           
-          echo "✅ Uploaded to production: gs://${BUCKET}/latest/"
+          echo "✅ Uploaded to production: gs://${{ secrets.GCS_BUCKET_PROD }}/latest/"
       
       - name: Summary
         run: |
