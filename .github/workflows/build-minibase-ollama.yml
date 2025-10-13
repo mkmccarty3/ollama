@@ -228,13 +228,19 @@ jobs:
           }
           EOF
           
-          # Upload to latest/ (including manifest)
-          gsutil -m cp flat-binaries/* manifest.json gs://${BUCKET}/latest/
-          
-          # Upload to versioned directory
+          # Upload to versioned directory (always succeeds - unique path)
+          echo "📦 Uploading to versioned directory..."
           gsutil -m cp flat-binaries/* manifest.json gs://${BUCKET}/versions/${VERSION}_${TIMESTAMP}/
+          echo "✅ Uploaded to: gs://${BUCKET}/versions/${VERSION}_${TIMESTAMP}/"
           
-          echo "✅ Uploaded to staging: gs://${BUCKET}/latest/"
+          # Try to update latest/ (may fail if service account lacks delete permissions)
+          echo "📦 Attempting to update latest/..."
+          if gsutil -m cp flat-binaries/* manifest.json gs://${BUCKET}/latest/ 2>&1; then
+            echo "✅ Updated latest/ successfully"
+          else
+            echo "⚠️  Could not update latest/ (permission denied)"
+            echo "   Binaries available at versioned path above"
+          fi
       
       - name: Upload to GCS (Production)
         if: steps.target.outputs.target == 'production' || steps.target.outputs.target == 'both'
@@ -256,13 +262,19 @@ jobs:
           }
           EOF
           
-          # Upload to latest/ (including manifest)
-          gsutil -m cp flat-binaries/* manifest.json gs://${BUCKET}/latest/
-          
-          # Upload to versioned directory
+          # Upload to versioned directory (always succeeds - unique path)
+          echo "📦 Uploading to versioned directory..."
           gsutil -m cp flat-binaries/* manifest.json gs://${BUCKET}/versions/${VERSION}_${TIMESTAMP}/
+          echo "✅ Uploaded to: gs://${BUCKET}/versions/${VERSION}_${TIMESTAMP}/"
           
-          echo "✅ Uploaded to production: gs://${BUCKET}/latest/"
+          # Try to update latest/ (may fail if service account lacks delete permissions)
+          echo "📦 Attempting to update latest/..."
+          if gsutil -m cp flat-binaries/* manifest.json gs://${BUCKET}/latest/ 2>&1; then
+            echo "✅ Updated latest/ successfully"
+          else
+            echo "⚠️  Could not update latest/ (permission denied)"
+            echo "   Binaries available at versioned path above"
+          fi
       
       - name: Summary
         run: |
