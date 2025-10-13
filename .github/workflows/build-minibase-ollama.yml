@@ -132,9 +132,8 @@ jobs:
           check-latest: true
           cache: true
       
-      - name: Install TDM-GCC
-        run: |
-          choco install tdm-gcc -y
+      - name: Setup MSVC
+        uses: microsoft/setup-msbuild@v2
       
       - name: Tidy dependencies
         run: go mod tidy
