@@ -217,12 +217,6 @@ jobs:
           
           echo "Uploading to staging bucket: ${BUCKET}"
           
-          # Upload to latest/
-          gsutil -m cp flat-binaries/* gs://${BUCKET}/latest/
-          
-          # Upload to versioned directory
-          gsutil -m cp flat-binaries/* gs://${BUCKET}/versions/${VERSION}_${TIMESTAMP}/
-          
           # Create a manifest file
           cat > manifest.json << EOF
           {
@@ -234,7 +228,11 @@ jobs:
           }
           EOF
           
-          gsutil cp manifest.json gs://${BUCKET}/latest/manifest.json
+          # Upload to latest/ (including manifest)
+          gsutil -m cp flat-binaries/* manifest.json gs://${BUCKET}/latest/
+          
+          # Upload to versioned directory
+          gsutil -m cp flat-binaries/* manifest.json gs://${BUCKET}/versions/${VERSION}_${TIMESTAMP}/
           
           echo "✅ Uploaded to staging: gs://${BUCKET}/latest/"
       
@@ -247,12 +245,6 @@ jobs:
           
           echo "Uploading to production bucket: ${BUCKET}"
           
-          # Upload to latest/
-          gsutil -m cp flat-binaries/* gs://${BUCKET}/latest/
-          
-          # Upload to versioned directory
-          gsutil -m cp flat-binaries/* gs://${BUCKET}/versions/${VERSION}_${TIMESTAMP}/
-          
           # Create a manifest file
           cat > manifest.json << EOF
           {
@@ -264,7 +256,11 @@ jobs:
           }
           EOF
           
-          gsutil cp manifest.json gs://${BUCKET}/latest/manifest.json
+          # Upload to latest/ (including manifest)
+          gsutil -m cp flat-binaries/* manifest.json gs://${BUCKET}/latest/
+          
+          # Upload to versioned directory
+          gsutil -m cp flat-binaries/* manifest.json gs://${BUCKET}/versions/${VERSION}_${TIMESTAMP}/
           
           echo "✅ Uploaded to production: gs://${BUCKET}/latest/"
       
