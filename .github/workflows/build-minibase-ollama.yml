@@ -42,6 +42,9 @@ jobs:
           check-latest: true
           cache: true
       
+      - name: Tidy dependencies
+        run: go mod tidy
+      
       - name: Build Ollama
         run: |
           go build -trimpath -o ollama-darwin-${{ matrix.arch }} .
@@ -89,6 +92,9 @@ jobs:
             sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
           fi
       
+      - name: Tidy dependencies
+        run: go mod tidy
+      
       - name: Build Ollama
         run: |
           go build -trimpath -o ollama-linux-${{ matrix.arch }} .
@@ -129,6 +135,9 @@ jobs:
       - name: Install TDM-GCC
         run: |
           choco install tdm-gcc -y
+      
+      - name: Tidy dependencies
+        run: go mod tidy
       
       - name: Build Ollama
         run: |
