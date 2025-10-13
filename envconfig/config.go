@@ -1,6 +1,7 @@
 package envconfig
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"math"
@@ -205,47 +206,116 @@ var (
 	UseAuth = Bool("OLLAMA_AUTH")
 )
 
-// Minibase Embedded Configuration
-// These can be set at compile time via -ldflags for user distribution
+// Minibase config file structure
+type MinibaseConfig struct {
+	RegistryURL string `json:"registry_url"`
+	APIKey      string `json:"api_key"`
+	UserID      int    `json:"user_id,omitempty"`
+	Username    string `json:"username,omitempty"`
+	OrgID       int    `json:"org_id,omitempty"`
+}
+
+// Embedded configuration (legacy fallback, deprecated)
 var (
 	EmbeddedRegistryURL = ""
 	EmbeddedAPIKey      = ""
 )
 
+// Get the Minibase config directory
+func getMinibaseConfigDir() string {
+	// Check MINIBASE_CONFIG_DIR env var first
+	if dir := Var("MINIBASE_CONFIG_DIR"); dir != "" {
+		return dir
+	}
+	
+	// Default to ~/.minibase
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".minibase")
+}
+
+// Load config from file
+func loadMinibaseConfig() *MinibaseConfig {
+	configDir := getMinibaseConfigDir()
+	if configDir == "" {
+		return nil
+	}
+	
+	configPath := filepath.Join(configDir, "config.json")
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil
+	}
+	
+	var config MinibaseConfig
+	if err := json.Unmarshal(data, &config); err != nil {
+		return nil
+	}
+	
+	return &config
+}
+
 // MinibaseRegistryURL returns the registry URL
-// Priority: env var > embedded config > default
+// Priority: env var > config file > embedded config > default
 func MinibaseRegistryURL() string {
-	// Check environment variable first (for testing/override)
+	// 1. Check environment variable (highest priority for testing/override)
 	if s := Var("MINIBASE_REGISTRY_URL"); s != "" {
 		return s
 	}
-	// Use embedded config (set at build time for users)
+	
+	// 2. Check config file
+	if config := loadMinibaseConfig(); config != nil && config.RegistryURL != "" {
+		return config.RegistryURL
+	}
+	
+	// 3. Use embedded config (compile-time, deprecated)
 	if EmbeddedRegistryURL != "" {
 		return EmbeddedRegistryURL
 	}
-	// Should not reach here in production
+	
+	// 4. Fallback to official Ollama registry
 	return "registry.ollama.ai"
 }
 
 // MinibaseAPIKey returns the API key
-// Priority: env var > embedded config
+// Priority: env var > config file > embedded config
 func MinibaseAPIKey() string {
-	// Check environment variable first (for testing/override)
+	// 1. Check environment variable (highest priority for testing/override)
 	if s := Var("MINIBASE_API_KEY"); s != "" {
 		return s
 	}
-	// Use embedded config (set at build time for users)
+	
+	// 2. Check config file
+	if config := loadMinibaseConfig(); config != nil && config.APIKey != "" {
+		return config.APIKey
+	}
+	
+	// 3. Use embedded config (compile-time, deprecated)
 	if EmbeddedAPIKey != "" {
 		return EmbeddedAPIKey
 	}
-	// No default - will require configuration
+	
+	// No API key configured
 	return ""
 }
 
-var (
-	// Legacy environment variable support (kept for backward compatibility)
-	minibaseAllowFallback = BoolWithDefault("MINIBASE_ALLOW_FALLBACK")
-)
+// MinibaseUserID returns the user ID from config (optional metadata)
+func MinibaseUserID() int {
+	if config := loadMinibaseConfig(); config != nil {
+		return config.UserID
+	}
+	return 0
+}
+
+// MinibaseUsername returns the username from config (optional metadata)
+func MinibaseUsername() string {
+	if config := loadMinibaseConfig(); config != nil {
+		return config.Username
+	}
+	return ""
+}
 
 func String(s string) func() string {
 	return func() string {
