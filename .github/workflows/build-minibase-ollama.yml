@@ -1,0 +1,262 @@
+name: Build Minibase Ollama Binaries
+
+on:
+  push:
+    branches:
+      - minibase
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+  workflow_dispatch:
+    inputs:
+      upload_to:
+        description: 'Upload to (production/staging/both)'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+          - both
+
+env:
+  CGO_CFLAGS: '-O3'
+  CGO_CXXFLAGS: '-O3'
+
+jobs:
+  # Build for macOS (both Intel and Apple Silicon)
+  build-darwin:
+    name: Build macOS (${{ matrix.arch }})
+    runs-on: macos-13-xlarge  # GitHub's macOS runner with native CGO support
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      
+      - name: Build Ollama
+        run: |
+          go build -trimpath -o ollama-darwin-${{ matrix.arch }} .
+        env:
+          GOOS: darwin
+          GOARCH: ${{ matrix.arch }}
+          CGO_ENABLED: 1
+          CGO_CPPFLAGS: '-mmacosx-version-min=11.3'
+      
+      - name: Verify binary
+        run: |
+          file ollama-darwin-${{ matrix.arch }}
+          ls -lh ollama-darwin-${{ matrix.arch }}
+      
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ollama-darwin-${{ matrix.arch }}
+          path: ollama-darwin-${{ matrix.arch }}
+          retention-days: 7
+
+  # Build for Linux (both amd64 and arm64)
+  build-linux:
+    name: Build Linux (${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential
+          if [ "${{ matrix.arch }}" == "arm64" ]; then
+            sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+          fi
+      
+      - name: Build Ollama
+        run: |
+          go build -trimpath -o ollama-linux-${{ matrix.arch }} .
+        env:
+          GOOS: linux
+          GOARCH: ${{ matrix.arch }}
+          CGO_ENABLED: 1
+          CC: ${{ matrix.arch == 'arm64' && 'aarch64-linux-gnu-gcc' || 'gcc' }}
+          CXX: ${{ matrix.arch == 'arm64' && 'aarch64-linux-gnu-g++' || 'g++' }}
+      
+      - name: Verify binary
+        run: |
+          file ollama-linux-${{ matrix.arch }}
+          ls -lh ollama-linux-${{ matrix.arch }}
+      
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ollama-linux-${{ matrix.arch }}
+          path: ollama-linux-${{ matrix.arch }}
+          retention-days: 7
+
+  # Build for Windows (amd64 only for now)
+  build-windows:
+    name: Build Windows (amd64)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      
+      - name: Install TDM-GCC
+        run: |
+          choco install tdm-gcc -y
+      
+      - name: Build Ollama
+        run: |
+          go build -trimpath -o ollama-windows-amd64.exe .
+        env:
+          GOOS: windows
+          GOARCH: amd64
+          CGO_ENABLED: 1
+      
+      - name: Verify binary
+        run: |
+          Get-Item ollama-windows-amd64.exe
+      
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ollama-windows-amd64
+          path: ollama-windows-amd64.exe
+          retention-days: 7
+
+  # Upload all binaries to GCS
+  upload-to-gcs:
+    name: Upload to GCS
+    needs: [build-darwin, build-linux, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: binaries/
+      
+      - name: List downloaded binaries
+        run: |
+          find binaries/ -type f -exec ls -lh {} \;
+          find binaries/ -type f -exec sha256sum {} \;
+      
+      - name: Flatten directory structure
+        run: |
+          mkdir -p flat-binaries
+          find binaries/ -type f -exec cp {} flat-binaries/ \;
+          ls -lh flat-binaries/
+      
+      - name: Generate checksums
+        run: |
+          cd flat-binaries
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
+      
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY_OLLAMA_UPLOAD }}
+      
+      - name: Setup Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+      
+      - name: Determine upload target
+        id: target
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            TARGET="${{ github.event.inputs.upload_to }}"
+          else
+            # Auto-push to staging for branch pushes
+            TARGET="staging"
+          fi
+          echo "target=$TARGET" >> $GITHUB_OUTPUT
+          echo "Uploading to: $TARGET"
+      
+      - name: Upload to GCS (Staging)
+        if: steps.target.outputs.target == 'staging' || steps.target.outputs.target == 'both'
+        run: |
+          BUCKET="${{ secrets.GCS_BUCKET_STAGING }}"
+          VERSION=$(git describe --tags --always --dirty)
+          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+          
+          # Upload to latest/
+          gsutil -m cp flat-binaries/* gs://${BUCKET}/latest/
+          
+          # Upload to versioned directory
+          gsutil -m cp flat-binaries/* gs://${BUCKET}/versions/${VERSION}_${TIMESTAMP}/
+          
+          # Create a manifest file
+          cat > manifest.json << EOF
+          {
+            "version": "${VERSION}",
+            "timestamp": "${TIMESTAMP}",
+            "commit": "${{ github.sha }}",
+            "branch": "${{ github.ref_name }}",
+            "built_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          EOF
+          
+          gsutil cp manifest.json gs://${BUCKET}/latest/manifest.json
+          
+          echo "✅ Uploaded to staging: gs://${BUCKET}/latest/"
+      
+      - name: Upload to GCS (Production)
+        if: steps.target.outputs.target == 'production' || steps.target.outputs.target == 'both'
+        run: |
+          BUCKET="${{ secrets.GCS_BUCKET_PROD }}"
+          VERSION=$(git describe --tags --always --dirty)
+          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+          
+          # Upload to latest/
+          gsutil -m cp flat-binaries/* gs://${BUCKET}/latest/
+          
+          # Upload to versioned directory
+          gsutil -m cp flat-binaries/* gs://${BUCKET}/versions/${VERSION}_${TIMESTAMP}/
+          
+          # Create a manifest file
+          cat > manifest.json << EOF
+          {
+            "version": "${VERSION}",
+            "timestamp": "${TIMESTAMP}",
+            "commit": "${{ github.sha }}",
+            "branch": "${{ github.ref_name }}",
+            "built_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          EOF
+          
+          gsutil cp manifest.json gs://${BUCKET}/latest/manifest.json
+          
+          echo "✅ Uploaded to production: gs://${BUCKET}/latest/"
+      
+      - name: Summary
+        run: |
+          echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Target**: ${{ steps.target.outputs.target }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch**: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Binaries Built:" >> $GITHUB_STEP_SUMMARY
+          ls -lh flat-binaries/ | tail -n +2 | awk '{print "- " $9 " (" $5 ")"}' >> $GITHUB_STEP_SUMMARY
+
