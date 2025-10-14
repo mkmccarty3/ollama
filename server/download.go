@@ -39,6 +39,7 @@ var blobDownloadManager sync.Map
 type blobDownload struct {
 	Name   string
 	Digest string
+	Token  string
 
 	Total     int64
 	Completed atomic.Int64
@@ -151,12 +152,23 @@ func (b *blobDownload) Prepare(ctx context.Context, requestURL *url.URL, opts *r
 
 		b.Total, _ = strconv.ParseInt(resp.Header.Get("Content-Length"), 10, 64)
 
-		size := b.Total / numDownloadParts
-		switch {
-		case size < minDownloadPartSize:
-			size = minDownloadPartSize
-		case size > maxDownloadPartSize:
-			size = maxDownloadPartSize
+		// For Minibase registry, force single-part downloads (no chunking)
+		// This ensures compatibility with the MediaWiki API blob endpoint
+		isMinibaseRegistry := strings.Contains(requestURL.Host, "minibase.ai")
+		
+		var size int64
+		if isMinibaseRegistry {
+			// Single part download for Minibase
+			size = b.Total
+		} else {
+			// Multi-part download for other registries
+			size = b.Total / numDownloadParts
+			switch {
+			case size < minDownloadPartSize:
+				size = minDownloadPartSize
+			case size > maxDownloadPartSize:
+				size = maxDownloadPartSize
+			}
 		}
 
 		var offset int64
@@ -263,6 +275,11 @@ func (b *blobDownload) run(ctx context.Context, requestURL *url.URL, opts *regis
 			if resp.StatusCode != http.StatusTemporaryRedirect && resp.StatusCode != http.StatusOK {
 				return nil, fmt.Errorf("unexpected status code %d", resp.StatusCode)
 			}
+			// For 200 OK, the blob is served directly at requestURL
+			// For 307 redirect, follow the Location header
+			if resp.StatusCode == http.StatusOK {
+				return requestURL, nil
+			}
 			return resp.Location()
 		}
 	}()
@@ -334,6 +351,12 @@ func (b *blobDownload) downloadChunk(ctx context.Context, requestURL *url.URL, w
 			return err
 		}
 		req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", part.StartsAt(), part.StopsAt()-1))
+
+		// Add authentication header for Minibase API endpoints
+		if strings.Contains(requestURL.Host, "minibase.ai") && strings.Contains(requestURL.Path, "api.php") {
+			req.Header.Set("Authorization", "Bearer "+b.Token)
+		}
+
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			return err
@@ -489,11 +512,24 @@ func downloadBlob(ctx context.Context, opts downloadOpts) (cacheHit bool, _ erro
 		return true, nil
 	}
 
-	data, ok := blobDownloadManager.LoadOrStore(opts.digest, &blobDownload{Name: fp, Digest: opts.digest})
+	data, ok := blobDownloadManager.LoadOrStore(opts.digest, &blobDownload{Name: fp, Digest: opts.digest, Token: opts.regOpts.Token})
 	download := data.(*blobDownload)
 	if !ok {
 		requestURL := opts.mp.BaseURL()
-		requestURL = requestURL.JoinPath("v2", opts.mp.GetNamespaceRepository(), "blobs", opts.digest)
+		// For Minibase registry, use MediaWiki API endpoints directly
+		if strings.Contains(opts.mp.Registry, "minibase.ai") {
+			requestURL = requestURL.JoinPath("api.php")
+			requestURL.RawQuery = url.Values{
+				"action":   []string{"ollama_getBlob"},
+				"model":    []string{opts.mp.Repository},
+				"namespace": []string{opts.mp.Namespace},
+				"digest":   []string{opts.digest},
+				"format":   []string{"json"},
+			}.Encode()
+		} else {
+			// Standard OCI registry URL
+			requestURL = requestURL.JoinPath("v2", opts.mp.GetNamespaceRepository(), "blobs", opts.digest)
+		}
 		if err := download.Prepare(ctx, requestURL, opts.regOpts); err != nil {
 			blobDownloadManager.Delete(opts.digest)
 			return false, err

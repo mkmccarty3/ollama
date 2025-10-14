@@ -783,9 +783,23 @@ func (r *Registry) Resolve(ctx context.Context, name string) (*Manifest, error) 
 		return nil, err
 	}
 
-	manifestURL := fmt.Sprintf("%s://%s/v2/%s/%s/manifests/%s", scheme, n.Host(), n.Namespace(), n.Model(), n.Tag())
-	if d.IsValid() {
-		manifestURL = fmt.Sprintf("%s://%s/v2/%s/%s/blobs/%s", scheme, n.Host(), n.Namespace(), n.Model(), d)
+	var manifestURL string
+
+	// For Minibase registry, use MediaWiki API endpoints directly
+	if strings.Contains(n.Host(), "minibase.ai") {
+		if d.IsValid() {
+			// Blob request - use MediaWiki API
+			manifestURL = fmt.Sprintf("%s://%s/api.php?action=ollama_getBlob&model=%s&namespace=%s&digest=%s&format=json", scheme, n.Host(), n.Model(), n.Namespace(), d)
+		} else {
+			// Manifest request - use MediaWiki API
+			manifestURL = fmt.Sprintf("%s://%s/api.php?action=ollama_getManifest&model=%s&namespace=%s&tag=%s&format=json", scheme, n.Host(), n.Model(), n.Namespace(), n.Tag())
+		}
+	} else {
+		// Standard OCI registry URLs
+		manifestURL = fmt.Sprintf("%s://%s/v2/%s/%s/manifests/%s", scheme, n.Host(), n.Namespace(), n.Model(), n.Tag())
+		if d.IsValid() {
+			manifestURL = fmt.Sprintf("%s://%s/v2/%s/%s/blobs/%s", scheme, n.Host(), n.Namespace(), n.Model(), d)
+		}
 	}
 
 	res, err := r.send(ctx, "GET", manifestURL, nil)
@@ -822,17 +836,22 @@ func (r *Registry) chunksums(ctx context.Context, name string, l *Layer) iter.Se
 			return
 		}
 
+		var blobURL string
+		if strings.Contains(n.Host(), "minibase.ai") {
+			// For Minibase, use MediaWiki API for blob URL
+			blobURL = fmt.Sprintf("%s://%s/api.php?action=ollama_getBlob&model=%s&namespace=%s&digest=%s&format=json",
+				scheme, n.Host(), n.Model(), n.Namespace(), l.Digest)
+		} else {
+			// Standard OCI registry URL
+			blobURL = fmt.Sprintf("%s://%s/v2/%s/%s/blobs/%s",
+				scheme, n.Host(), n.Namespace(), n.Model(), l.Digest)
+		}
+
 		if l.Size < r.maxChunkingThreshold() {
 			// any layer under the threshold should be downloaded
 			// in one go.
 			cs := chunksum{
-				URL: fmt.Sprintf("%s://%s/v2/%s/%s/blobs/%s",
-					scheme,
-					n.Host(),
-					n.Namespace(),
-					n.Model(),
-					l.Digest,
-				),
+				URL:    blobURL,
 				Chunk:  blob.Chunk{Start: 0, End: l.Size - 1},
 				Digest: l.Digest,
 			}
@@ -867,13 +886,16 @@ func (r *Registry) chunksums(ctx context.Context, name string, l *Layer) iter.Se
 		// include all bytes of the layer. If the stream is cut short,
 		// clients should retry.
 
-		chunksumsURL := fmt.Sprintf("%s://%s/v2/%s/%s/chunksums/%s",
-			scheme,
-			n.Host(),
-			n.Namespace(),
-			n.Model(),
-			l.Digest,
-		)
+		var chunksumsURL string
+		if strings.Contains(n.Host(), "minibase.ai") {
+			// For Minibase, use MediaWiki API for chunksums
+			chunksumsURL = fmt.Sprintf("%s://%s/api.php?action=ollama_getChunksums&model=%s&namespace=%s&digest=%s&format=json",
+				scheme, n.Host(), n.Model(), n.Namespace(), l.Digest)
+		} else {
+			// Standard OCI registry URL
+			chunksumsURL = fmt.Sprintf("%s://%s/v2/%s/%s/chunksums/%s",
+				scheme, n.Host(), n.Namespace(), n.Model(), l.Digest)
+		}
 
 		req, err := r.newRequest(ctx, "GET", chunksumsURL, nil)
 		if err != nil {
@@ -891,7 +913,7 @@ func (r *Registry) chunksums(ctx context.Context, name string, l *Layer) iter.Se
 			yield(chunksum{}, err)
 			return
 		}
-		blobURL := res.Header.Get("Content-Location")
+		blobURL = res.Header.Get("Content-Location")
 
 		s := bufio.NewScanner(res.Body)
 		s.Split(bufio.ScanWords)

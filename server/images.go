@@ -720,7 +720,22 @@ func PullModel(ctx context.Context, name string, regOpts *registryOptions, fn fu
 }
 
 func pullModelManifest(ctx context.Context, mp ModelPath, regOpts *registryOptions) (*Manifest, error) {
-	requestURL := mp.BaseURL().JoinPath("v2", mp.GetNamespaceRepository(), "manifests", mp.Tag)
+	var requestURL *url.URL
+
+	// For Minibase registry, use MediaWiki API endpoints directly
+	if strings.Contains(mp.Registry, "minibase.ai") {
+		requestURL = mp.BaseURL().JoinPath("api.php")
+		requestURL.RawQuery = url.Values{
+			"action":   []string{"ollama_getManifest"},
+			"model":    []string{mp.Repository},
+			"namespace": []string{mp.Namespace},
+			"tag":      []string{mp.Tag},
+			"format":   []string{"json"},
+		}.Encode()
+	} else {
+		// Standard OCI registry URL
+		requestURL = mp.BaseURL().JoinPath("v2", mp.GetNamespaceRepository(), "manifests", mp.Tag)
+	}
 
 	headers := make(http.Header)
 	headers.Set("Accept", "application/vnd.docker.distribution.manifest.v2+json")
