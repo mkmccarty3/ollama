@@ -331,6 +331,14 @@ func RunHandler(cmd *cobra.Command, args []string) error {
 	}
 	opts.Format = format
 
+	instruction, err := cmd.Flags().GetString("instruction")
+	if err != nil {
+		return err
+	}
+	if instruction != "" {
+		opts.System = instruction
+	}
+
 	thinkFlag := cmd.Flags().Lookup("think")
 	if thinkFlag.Changed {
 		thinkStr, err := cmd.Flags().GetString("think")
@@ -1676,6 +1684,7 @@ func NewCLI() *cobra.Command {
 	runCmd.Flags().Bool("insecure", false, "Use an insecure registry")
 	runCmd.Flags().Bool("nowordwrap", false, "Don't wrap words to the next line automatically")
 	runCmd.Flags().String("format", "", "Response format (e.g. json)")
+	runCmd.Flags().String("instruction", "", "Custom instruction to override the model's default (e.g. 'Translate to Spanish')")
 	runCmd.Flags().String("think", "", "Enable thinking mode: true/false or high/medium/low for supported models")
 	runCmd.Flags().Lookup("think").NoOptDefVal = "true"
 	runCmd.Flags().Bool("hidethinking", false, "Hide thinking output (if provided)")
