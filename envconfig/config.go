@@ -208,11 +208,13 @@ var (
 
 // Minibase config file structure
 type MinibaseConfig struct {
-	RegistryURL string `json:"registry_url"`
-	APIKey      string `json:"api_key"`
-	UserID      int    `json:"user_id,omitempty"`
-	Username    string `json:"username,omitempty"`
-	OrgID       int    `json:"org_id,omitempty"`
+	RegistryURL  string `json:"registry_url"`
+	APIKey       string `json:"api_key"`
+	UserID       int    `json:"user_id,omitempty"`
+	Username     string `json:"username,omitempty"`
+	OrgID        int    `json:"org_id,omitempty"`
+	Architecture string `json:"architecture,omitempty"`
+	OS           string `json:"os,omitempty"`
 }
 
 // Embedded configuration (legacy fallback, deprecated)
@@ -315,6 +317,22 @@ func MinibaseUsername() string {
 		return config.Username
 	}
 	return ""
+}
+
+// MinibaseArchitecture returns the architecture from config (for Ollama manifest generation)
+func MinibaseArchitecture() string {
+	if config := loadMinibaseConfig(); config != nil && config.Architecture != "" {
+		return config.Architecture
+	}
+	return "amd64" // Default fallback
+}
+
+// MinibaseOS returns the OS from config (for Ollama manifest generation)
+func MinibaseOS() string {
+	if config := loadMinibaseConfig(); config != nil && config.OS != "" {
+		return config.OS
+	}
+	return "linux" // Default fallback
 }
 
 func String(s string) func() string {
